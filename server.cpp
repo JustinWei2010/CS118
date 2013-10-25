@@ -13,6 +13,7 @@
 #include <signal.h>	/* signal name macros, and the kill() prototype */
 #include <string.h>
 #include <ctime>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <iostream>
 #include <sstream>
@@ -98,10 +99,6 @@ string contentType(string path)
 	string file_name;
 	file_name = path.substr(path.find_last_of("/")+1);
 
-	//Check valid file path
-
-	//Check valid file name
-
 	string type = file_name.substr(file_name.find(".")+1);
 	
 	if(type == "html" || type == "htm"){
@@ -112,7 +109,7 @@ string contentType(string path)
 		return "image/jpeg";
 	}
 
-	//Need to handle case where file type isnt defined
+	//******Need to handle case where file type isnt defined
 	return "";
 }
 
@@ -121,17 +118,26 @@ Parses the http request sent by the client
 */
 void requestParser(char *request, int sock)
 {
+	//Parsing the first line of the request
 	int n;
 	string method, path, version, delim;
 	delim = " \n\r\t";
 	method = strtok(request, delim.c_str());
 	path = strtok(NULL, delim.c_str());
 	version = strtok(NULL, delim.c_str());
+
+	//********Need to check validity of the request message
 	
 	ifstream file(path.c_str());
-	string status, status_msg, content_type, content_length;
-	
-	if(file.is_open()){
+	string status, status_msg;
+
+	//Checking status messages
+	string version_num = version.substr(version.find_last_of("/")+1);
+	if(version_num != "1.1" && version_num != "1.0"){
+		status_msg = "505 HTTP Version Not Supported";
+	}else if(method != "GET"){
+		status_msg = "405 Method Not Allowed";	
+	}else if(file.is_open()){
 		status_msg = "200 OK";
 	}else{
 		status_msg = "404 Not Found";
@@ -141,22 +147,45 @@ void requestParser(char *request, int sock)
 	status = version + " " + status_msg + "\r\n"; 
 	n = write(sock, status.c_str(), status.size());
 
+	string connection = "Connection: close\r\n";
+	n = write(sock, connection.c_str(), connection.size());
+
+	//Last date
 	time_t timer;
+	struct tm *td;
+	char date[80];
+
 	time(&timer);
-	string date(ctime(&timer));
-	date = "Date: " + date; 
-	n = write(sock, date.c_str(), date.size());
+	td = gmtime(&timer);
+	strftime(date, 80, "Date: %a, %d %b %Y %X GMT\r\n", td); 
+	n = write(sock, date, 80);
 
-	content_type = "Content-Type: " + contentType(path) + "\r\n";
-	n = write(sock, content_type.c_str(), content_type.size());
+	//Server
+	string server = "Server: Local Webserver\r\n";
+	n = write(sock, server.c_str(), server.size());	
 
+	//Modified time
+	char last_modified[80];
+	struct stat attrib;
+	stat(path.c_str(), &attrib);
+	td = gmtime(&(attrib.st_mtime));
+	strftime(last_modified, 80, "Last-Modified: %a, %d %b %Y %X GMT\r\n", td);
+	n = write(sock, last_modified, 80);	
+
+	//Getting content length
+	string content_length;	
 	file.seekg(0, ifstream::end);
 	stringstream ss;
 	ss << file.tellg();
 	content_length = "Content-Length: " + ss.str() + "\r\n";
 	n = write(sock, content_length.c_str(), content_length.size()); 
-	
-	cout << status << date << content_type << content_length << endl;
+
+	//Getting content type
+	string content_type;	
+	content_type = "Content-Type: " + contentType(path) + "\r\n";
+	n = write(sock, content_type.c_str(), content_type.size());
+
+	cout << status << connection << date << server << last_modified << content_length << content_type << endl;
 
 	//Reset file pos, and also add in a CRLF before the body content	
 	file.clear();
