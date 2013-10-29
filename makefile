@@ -1,2 +1,2 @@
-server: server.c //filename
-  g++ -o server server.c
+server: server.cpp //filename
+  g++ -o server server.cpp
