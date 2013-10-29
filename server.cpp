@@ -1,8 +1,4 @@
-/* A simple server in the internet domain using TCP
-   The port number is passed as an argument 
-   This version runs forever, forking off a separate 
-   process for each connection
-*/
+
 #include <stdio.h>
 #include <sys/types.h>   // definitions of a number of data types used in socket.h and netinet/in.h
 #include <sys/socket.h>  // definitions of structures needed for sockets, e.g. sockaddr
@@ -130,24 +126,31 @@ void requestParser(char *request, int sock)
 	
 	ifstream file(path.c_str());
 	string status, status_msg;
+	int status_num; //number to keep track of status
 
 	//Checking status messages
 	string version_num = version.substr(version.find_last_of("/")+1);
 	if(version_num != "1.1" && version_num != "1.0"){
 		status_msg = "505 HTTP Version Not Supported";
+		status_num = 3;
 	}else if(method != "GET"){
-		status_msg = "405 Method Not Allowed";	
+		status_msg = "405 Method Not Allowed";
+		status_num = 2;
 	}else if(file.is_open()){
 		status_msg = "200 OK";
+		status_num = 0;
 	}else{
 		status_msg = "404 Not Found";
+		status_num = 1;
 	}
 
 	//Header messages	
 	status = version + " " + status_msg + "\r\n"; 
+	if(status_num == 0)
 	n = write(sock, status.c_str(), status.size());
 
 	string connection = "Connection: close\r\n";
+	if(status_num == 0)
 	n = write(sock, connection.c_str(), connection.size());
 
 	//Last date
@@ -158,10 +161,12 @@ void requestParser(char *request, int sock)
 	time(&timer);
 	td = gmtime(&timer);
 	strftime(date, 80, "Date: %a, %d %b %Y %X GMT\r\n", td); 
+	if(status_num == 0)
 	n = write(sock, date, 80);
 
 	//Server
 	string server = "Server: Local Webserver\r\n";
+	if(status_num == 0)
 	n = write(sock, server.c_str(), server.size());	
 
 	//Modified time
@@ -170,6 +175,7 @@ void requestParser(char *request, int sock)
 	stat(path.c_str(), &attrib);
 	td = gmtime(&(attrib.st_mtime));
 	strftime(last_modified, 80, "Last-Modified: %a, %d %b %Y %X GMT\r\n", td);
+	if(status_num == 0)
 	n = write(sock, last_modified, 80);	
 
 	//Getting content length
@@ -178,11 +184,13 @@ void requestParser(char *request, int sock)
 	stringstream ss;
 	ss << file.tellg();
 	content_length = "Content-Length: " + ss.str() + "\r\n";
+	if(status_num == 0)
 	n = write(sock, content_length.c_str(), content_length.size()); 
 
 	//Getting content type
 	string content_type;	
 	content_type = "Content-Type: " + contentType(path) + "\r\n";
+	if(status_num == 0)
 	n = write(sock, content_type.c_str(), content_type.size());
 
 	cout << status << connection << date << server << last_modified << content_length << content_type << endl;
@@ -190,6 +198,7 @@ void requestParser(char *request, int sock)
 	//Reset file pos, and also add in a CRLF before the body content	
 	file.clear();
 	file.seekg(0, ifstream::beg);
+	if(status_num == 0)
 	n = write(sock, "\n", 1);
 
 	//Body content
@@ -201,6 +210,9 @@ void requestParser(char *request, int sock)
 			n = write(sock, line.c_str(), line.size());
 		}
 		file.close();
+	}
+	else{
+		n = write(sock, status_msg.c_str(), status_msg.size());
 	}
 	return;
 }
