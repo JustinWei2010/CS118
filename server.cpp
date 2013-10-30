@@ -105,8 +105,7 @@ string contentType(string path)
 		return "image/jpeg";
 	}
 
-	//******Need to handle case where file type isnt defined
-	return "";
+	return "File Type Not Supported";
 }
 
 /*
@@ -122,8 +121,6 @@ void requestParser(char *request, int sock)
 	path = strtok(NULL, delim.c_str());
 	version = strtok(NULL, delim.c_str());
 
-	//********Need to check validity of the request message
-	
 	ifstream file(path.c_str());
 	string status, status_msg;
 	int status_num; //number to keep track of status
@@ -146,11 +143,9 @@ void requestParser(char *request, int sock)
 
 	//Header messages	
 	status = version + " " + status_msg + "\r\n"; 
-	if(status_num == 0)
 	n = write(sock, status.c_str(), status.size());
 
 	string connection = "Connection: close\r\n";
-	if(status_num == 0)
 	n = write(sock, connection.c_str(), connection.size());
 
 	//Last date
@@ -161,12 +156,10 @@ void requestParser(char *request, int sock)
 	time(&timer);
 	td = gmtime(&timer);
 	strftime(date, 80, "Date: %a, %d %b %Y %X GMT\r\n", td); 
-	if(status_num == 0)
 	n = write(sock, date, 80);
 
 	//Server
 	string server = "Server: Local Webserver\r\n";
-	if(status_num == 0)
 	n = write(sock, server.c_str(), server.size());	
 
 	//Modified time
@@ -175,22 +168,20 @@ void requestParser(char *request, int sock)
 	stat(path.c_str(), &attrib);
 	td = gmtime(&(attrib.st_mtime));
 	strftime(last_modified, 80, "Last-Modified: %a, %d %b %Y %X GMT\r\n", td);
-	if(status_num == 0)
 	n = write(sock, last_modified, 80);	
 
 	//Getting content length
 	string content_length;	
 	file.seekg(0, ifstream::end);
 	stringstream ss;
+	long max = file.tellg();
 	ss << file.tellg();
 	content_length = "Content-Length: " + ss.str() + "\r\n";
-	if(status_num == 0)
 	n = write(sock, content_length.c_str(), content_length.size()); 
 
 	//Getting content type
 	string content_type;	
 	content_type = "Content-Type: " + contentType(path) + "\r\n";
-	if(status_num == 0)
 	n = write(sock, content_type.c_str(), content_type.size());
 
 	cout << status << connection << date << server << last_modified << content_length << content_type << endl;
@@ -198,20 +189,35 @@ void requestParser(char *request, int sock)
 	//Reset file pos, and also add in a CRLF before the body content	
 	file.clear();
 	file.seekg(0, ifstream::beg);
-	if(status_num == 0)
 	n = write(sock, "\n", 1);
 
+	char packet[576];
 	//Body content
 	string line;
-	if(file.is_open()){
-		while(getline(file, line)){
-			cout << line << endl;
-			line += '\n';
-			n = write(sock, line.c_str(), line.size());
+	if(file.is_open() && status_num == 0){
+		long count = 0;
+		
+		while(count < max){
+			bzero(packet, 576);
+			file.read(packet, 575);
+			n = write(sock, packet, 575);	
+			count += 575;
 		}
+		
+		//Take care of excess bytes
+		if(max >= 575){
+			count -= max;
+			bzero(packet, 576);
+			file.read(packet, count);
+			n = write(sock, packet, count);	
+		}
+		/*
+		while(getline(file, line)){
+			line += "\n";
+			n = write(sock, line.c_str(), line.size());
+		}*/
 		file.close();
-	}
-	else{
+	}else{
 		n = write(sock, status_msg.c_str(), status_msg.size());
 	}
 	return;
