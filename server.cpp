@@ -200,8 +200,6 @@ void requestParser(char *request, int sock)
 	n = write(sock, content_type.c_str(), content_type.size());
 	if (n < 0) error("ERROR writing to socket");
 
-	cout << status << connection << date << server << last_modified << content_length << content_type << endl;
-
 	//Reset file pos, and also add in a CRLF before the body content	
 	file.clear();
 	file.seekg(0, ifstream::beg);
@@ -227,7 +225,6 @@ void requestParser(char *request, int sock)
 			file.read(packet, count);
 			n = write(sock, packet, count);	
 			if (n < 0) error("ERROR writing to socket");
-
 		}
 		file.close();
 	}else{
