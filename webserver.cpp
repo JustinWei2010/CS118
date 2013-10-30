@@ -105,8 +105,7 @@ string contentType(string path)
 		return "image/jpeg";
 	}
 
-	//******Need to handle case where file type isnt defined
-	return "";
+	return "File Type Not Supported";
 }
 
 /*
@@ -122,15 +121,22 @@ void requestParser(char *request, int sock)
 	path = strtok(NULL, delim.c_str());
 	version = strtok(NULL, delim.c_str());
 
-	//********Need to check validity of the request message
-	
-	ifstream file(path.c_str());
+	ifstream file;
+	if(contentType(path) == "image/gif" || contentType(path) == "image/jpeg"){
+		file.open(path.c_str(), ios_base::binary);
+	}else{
+		file.open(path.c_str());
+	}
+
 	string status, status_msg;
 	int status_num; //number to keep track of status
 
 	//Checking status messages
 	string version_num = version.substr(version.find_last_of("/")+1);
-	if(version_num != "1.1" && version_num != "1.0"){
+	if(version.size() == 0 || method.size() == 0 || path.size() == 0 || version.substr(0,5) != "HTTP/"){
+		status_msg = "400 Bad Request";
+		status_num = 4;
+	}else if(version_num != "1.1" && version_num != "1.0"){
 		status_msg = "505 HTTP Version Not Supported";
 		status_num = 3;
 	}else if(method != "GET"){
@@ -146,12 +152,12 @@ void requestParser(char *request, int sock)
 
 	//Header messages	
 	status = version + " " + status_msg + "\r\n"; 
-	if(status_num == 0)
 	n = write(sock, status.c_str(), status.size());
+	if (n < 0) error("ERROR writing to socket");
 
 	string connection = "Connection: close\r\n";
-	if(status_num == 0)
 	n = write(sock, connection.c_str(), connection.size());
+	if (n < 0) error("ERROR writing to socket");
 
 	//Last date
 	time_t timer;
@@ -161,13 +167,13 @@ void requestParser(char *request, int sock)
 	time(&timer);
 	td = gmtime(&timer);
 	strftime(date, 80, "Date: %a, %d %b %Y %X GMT\r\n", td); 
-	if(status_num == 0)
 	n = write(sock, date, 80);
+	if (n < 0) error("ERROR writing to socket");
 
 	//Server
 	string server = "Server: Local Webserver\r\n";
-	if(status_num == 0)
 	n = write(sock, server.c_str(), server.size());	
+	if (n < 0) error("ERROR writing to socket");
 
 	//Modified time
 	char last_modified[80];
@@ -175,44 +181,58 @@ void requestParser(char *request, int sock)
 	stat(path.c_str(), &attrib);
 	td = gmtime(&(attrib.st_mtime));
 	strftime(last_modified, 80, "Last-Modified: %a, %d %b %Y %X GMT\r\n", td);
-	if(status_num == 0)
 	n = write(sock, last_modified, 80);	
+	if (n < 0) error("ERROR writing to socket");
 
 	//Getting content length
 	string content_length;	
 	file.seekg(0, ifstream::end);
 	stringstream ss;
+	long max = file.tellg();
 	ss << file.tellg();
 	content_length = "Content-Length: " + ss.str() + "\r\n";
-	if(status_num == 0)
 	n = write(sock, content_length.c_str(), content_length.size()); 
+	if (n < 0) error("ERROR writing to socket");
 
 	//Getting content type
 	string content_type;	
 	content_type = "Content-Type: " + contentType(path) + "\r\n";
-	if(status_num == 0)
 	n = write(sock, content_type.c_str(), content_type.size());
+	if (n < 0) error("ERROR writing to socket");
 
 	cout << status << connection << date << server << last_modified << content_length << content_type << endl;
 
 	//Reset file pos, and also add in a CRLF before the body content	
 	file.clear();
 	file.seekg(0, ifstream::beg);
-	if(status_num == 0)
 	n = write(sock, "\n", 1);
+	if (n < 0) error("ERROR writing to socket");
 
+	char packet[1024];
 	//Body content
-	string line;
-	if(file.is_open()){
-		while(getline(file, line)){
-			cout << line << endl;
-			line += '\n';
-			n = write(sock, line.c_str(), line.size());
+	if(file.is_open() && status_num == 0){
+		long count = 0;
+		while(count < max){
+			bzero(packet, 1024);
+			file.read(packet, 1024);
+			n = write(sock, packet, 1024);	
+			if (n < 0) error("ERROR writing to socket");
+			count += 1024;
+		}
+		
+		//Take care of excess bytes
+		if(max > 1024){
+			count %= max;
+			bzero(packet, 1024);
+			file.read(packet, count);
+			n = write(sock, packet, count);	
+			if (n < 0) error("ERROR writing to socket");
+
 		}
 		file.close();
-	}
-	else{
+	}else{
 		n = write(sock, status_msg.c_str(), status_msg.size());
+		if (n < 0) error("ERROR writing to socket");
 	}
 	return;
 }
