@@ -1,4 +1,3 @@
-
 #include <stdio.h>
 #include <sys/types.h>   // definitions of a number of data types used in socket.h and netinet/in.h
 #include <sys/socket.h>  // definitions of structures needed for sockets, e.g. sockaddr
@@ -208,18 +207,20 @@ void requestParser(char *request, int sock)
 	n = write(sock, "\n", 1);
 	if (n < 0) error("ERROR writing to socket");
 
-	char packet[1024];
+	//char packet[1024];
+	char packet[max];
 	//Body content
 	if(file.is_open() && status_num == 0){
 		long count = 0;
 		while(count < max){
-			bzero(packet, 1024);
-			file.read(packet, 1024);
-			n = write(sock, packet, 1024);	
+			memset(packet, '\0', max);
+			//bzero(packet, 1024);
+			file.read(packet, max-1);
+			n = write(sock, packet, max-1);	
 			if (n < 0) error("ERROR writing to socket");
-			count += 1024;
+			count += max-1;
 		}
-		
+		/*
 		//Take care of excess bytes
 		if(max > 1024){
 			count %= max;
@@ -228,7 +229,7 @@ void requestParser(char *request, int sock)
 			n = write(sock, packet, count);	
 			if (n < 0) error("ERROR writing to socket");
 
-		}
+		}*/
 		file.close();
 	}else{
 		n = write(sock, status_msg.c_str(), status_msg.size());
