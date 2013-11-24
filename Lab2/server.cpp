@@ -22,23 +22,23 @@ void sendFile(int sock, struct sockaddr_in &client, ifstream &input, long file_s
 {
 	int n;
 	socklen_t clilen = sizeof(client);
-	char packet[1024];
-	long count = 1024;
+	char packet[8192];
+	long count = 8192;
 	
 	while(count < file_size){
-		bzero(packet, 1024);
-		input.read(packet, 1024);
-		n = sendto(sock, packet, 1024, 0, (struct sockaddr *) &client, clilen); 
+		bzero(packet, 8192);
+		input.read(packet, 8192);
+		n = sendto(sock, packet, 8192, 0, (struct sockaddr *) &client, clilen); 
 		if(n < 0)
 			printf("Error sending file to client\n");
-		count += 1024;
+		count += 8192;
 	}
 
-	if(file_size > 1024)
-		count = 1024 - count % file_size;
+	if(file_size > 8192)
+		count = 8192 - count % file_size;
 	else
 		count = file_size;
-	bzero(packet, 1024);
+	bzero(packet, 8192);
 	input.read(packet, count);
 	n = sendto(sock, packet, count, 0, (struct sockaddr *) &client, clilen);
 	if(n < 0)

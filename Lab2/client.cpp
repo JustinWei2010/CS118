@@ -21,24 +21,24 @@ void getFile(int sock, struct sockaddr_in &server, ofstream &output, long file_s
 {
 	int n;
 	socklen_t servlen = sizeof(server);
-	char packet[1024];
-	long count = 1024;
+	char packet[8192];
+	long count = 8192;
 	while(count < file_size){
-		bzero(packet, 1024);
-		n = recvfrom(sock, packet, 1024, 0, (struct sockaddr *) &server, &servlen);
+		bzero(packet, 8192);
+		n = recvfrom(sock, packet, 8192, 0, (struct sockaddr *) &server, &servlen);
 		if(n < 0)
 			printf("Error recieving file from server\n");
 		else
-			output.write(packet, 1024);
-		count += 1024;
+			output.write(packet, 8192);
+		count += 8192;
 	}
 
 	//Add in extra bits of file
-	if(file_size > 1024)
-		count = 1024 - count % file_size;
+	if(file_size > 8192)
+		count = 8192 - count % file_size;
 	else
 		count = file_size;
-	bzero(packet, 1024);
+	bzero(packet, 8192);
 	n = recvfrom(sock, packet, count, 0, (struct sockaddr *) &server, &servlen);
 	if(n < 0)
 		printf("Error recieving file from server\n");
