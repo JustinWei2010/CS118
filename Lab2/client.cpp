@@ -11,6 +11,9 @@
 #include <iostream>
 using namespace std;
 
+const int PACKET_SIZE = 8192;
+const int PAYLOAD_SIZE = 0;
+
 void error(string msg)
 {
 	perror(msg.c_str());
@@ -21,29 +24,38 @@ void getFile(int sock, struct sockaddr_in &server, ofstream &output, long file_s
 {
 	int n;
 	socklen_t servlen = sizeof(server);
-	char packet[8192];
-	long count = 8192;
+	char packet[PACKET_SIZE];
+	long count = PACKET_SIZE;
+	char ack_packet[256];
 	while(count < file_size){
-		bzero(packet, 8192);
-		n = recvfrom(sock, packet, 8192, 0, (struct sockaddr *) &server, &servlen);
-		if(n < 0)
+		bzero(packet, PACKET_SIZE);
+		bzero(ack_packet, 256);
+		n = recvfrom(sock, packet, PACKET_SIZE, 0, (struct sockaddr *) &server, &servlen);
+		if(n < 0){
 			printf("Error recieving file from server\n");
-		else
-			output.write(packet, 8192);
-		count += 8192;
+		}else{
+			n = sendto(sock, ack_packet, 256, 0, (struct sockaddr *) &server, servlen);
+			printf("Sent acknowledgement of packet to server\n");
+			output.write(packet, PACKET_SIZE);
+		}
+		count += PACKET_SIZE;
 	}
 
 	//Add in extra bits of file
-	if(file_size > 8192)
-		count = 8192 - count % file_size;
+	if(file_size > PACKET_SIZE)
+		count = PACKET_SIZE - count % file_size;
 	else
 		count = file_size;
-	bzero(packet, 8192);
+	bzero(packet, PACKET_SIZE);
+	bzero(ack_packet, 256);
 	n = recvfrom(sock, packet, count, 0, (struct sockaddr *) &server, &servlen);
-	if(n < 0)
+	if(n < 0){
 		printf("Error recieving file from server\n");
-	else
+	}else{
+		n = sendto(sock, ack_packet, 256, 0, (struct sockaddr *) &server, servlen);
+		printf("Sent acknowledgement of packet to server\n");
 		output.write(packet, count);
+	}
 }
 
 int main(int argc, char *argv[])
@@ -88,7 +100,7 @@ int main(int argc, char *argv[])
 	n = recvfrom(sockfd, buffer, 255, 0, (struct sockaddr *) &serv_addr, &serv_len);
 	string msg(buffer);
 	if(msg == "File not found"){
-		printf("File does not exist on server\n");
+		printf("File not found on server\n");
 		exit(0);
 	}
 

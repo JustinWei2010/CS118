@@ -12,6 +12,9 @@
 #include <iostream>
 using namespace std;
 
+const int PACKET_SIZE = 8192;
+const int PAYLOAD_SIZE = 0;
+
 void error(string msg)
 {
 	perror(msg.c_str());
@@ -22,27 +25,34 @@ void sendFile(int sock, struct sockaddr_in &client, ifstream &input, long file_s
 {
 	int n;
 	socklen_t clilen = sizeof(client);
-	char packet[8192];
-	long count = 8192;
-	
+	char packet[PACKET_SIZE];
+	long count = PACKET_SIZE;
+	char ack_packet[256];	
+
 	while(count < file_size){
-		bzero(packet, 8192);
-		input.read(packet, 8192);
-		n = sendto(sock, packet, 8192, 0, (struct sockaddr *) &client, clilen); 
+		bzero(packet, PACKET_SIZE);
+		bzero(ack_packet, 256);
+		input.read(packet, PACKET_SIZE);
+		n = sendto(sock, packet, PACKET_SIZE, 0, (struct sockaddr *) &client, clilen); 
 		if(n < 0)
 			printf("Error sending file to client\n");
-		count += 8192;
+		n = recvfrom(sock, ack_packet, 256, 0, (struct sockaddr *) &client, &clilen);	
+		printf("Client acknowledged recieving packet\n");
+		count += PACKET_SIZE;
 	}
 
-	if(file_size > 8192)
-		count = 8192 - count % file_size;
+	if(file_size > PACKET_SIZE)
+		count = PACKET_SIZE - count % file_size;
 	else
 		count = file_size;
-	bzero(packet, 8192);
+	bzero(packet, PACKET_SIZE);
+	bzero(ack_packet, 256);
 	input.read(packet, count);
 	n = sendto(sock, packet, count, 0, (struct sockaddr *) &client, clilen);
 	if(n < 0)
 		printf("Error sending file to client\n");
+	n = recvfrom(sock, ack_packet, 256, 0, (struct sockaddr *) &client, &clilen);
+	printf("Client acknowledged recieving packet\n");
 }
 
 void dostuff(int sock, struct sockaddr_in &client, char *path)
@@ -68,6 +78,7 @@ void dostuff(int sock, struct sockaddr_in &client, char *path)
 		printf("Sending file to client...\n");
 		sendFile(sock, client, file, size);
 	}else{
+		printf("File not found\n");
 		msg = "File not found";
 		n = sendto(sock, msg.c_str(), msg.length(), 0, (struct sockaddr *) &client, clilen);
 	}
