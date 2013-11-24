@@ -17,6 +17,35 @@ void error(string msg)
 	exit(1);	
 }
 
+void getFile(int sock, struct sockaddr_in &server, ofstream &output, long file_size)
+{
+	int n;
+	socklen_t servlen = sizeof(server);
+	char packet[1024];
+	long count = 1024;
+	while(count < file_size){
+		bzero(packet, 1024);
+		n = recvfrom(sock, packet, 1024, 0, (struct sockaddr *) &server, &servlen);
+		if(n < 0)
+			printf("Error recieving file from server\n");
+		else
+			output.write(packet, 1024);
+		count += 1024;
+	}
+
+	//Add in extra bits of file
+	if(file_size > 1024)
+		count = 1024 - count % file_size;
+	else
+		count = file_size;
+	bzero(packet, 1024);
+	n = recvfrom(sock, packet, count, 0, (struct sockaddr *) &server, &servlen);
+	if(n < 0)
+		printf("Error recieving file from server\n");
+	else
+		output.write(packet, count);
+}
+
 int main(int argc, char *argv[])
 {
 	int sockfd, portno, n;
@@ -47,11 +76,13 @@ int main(int argc, char *argv[])
 	serv_addr.sin_port = htons(portno);	
 
 	serv_len = sizeof(serv_addr);
-	
+
+	//Request file from server	
 	n = sendto(sockfd, file_name.c_str(), file_name.length(), 0, (struct sockaddr *) &serv_addr, serv_len);
 	if(n < 0)
 		error("Error sending file name");	
 
+	//Retrieve response from the server
 	char buffer[256];
 	bzero(buffer, 256);
 	n = recvfrom(sockfd, buffer, 255, 0, (struct sockaddr *) &serv_addr, &serv_len);
@@ -61,20 +92,16 @@ int main(int argc, char *argv[])
 		exit(0);
 	}
 
-	cout << "Retrieving file(" << buffer << "bytes)..." << endl;
-
-	int file_size = atoi(buffer);
+	//Get file from server given the size of the file
+	long file_size = atol(buffer);
+	printf("Retrieving file(%ldbytes)...\n", file_size);
 	
 	file_name = "/home/cs118/client/" + file_name.substr(file_name.find_last_of("/")+1);
-	ofstream output;
-	output.open(file_name.c_str()); 
-	if(!output.is_open())
+	ofstream file;
+	file.open(file_name.c_str()); 
+	if(file.is_open())
+		getFile(sockfd, serv_addr, file, file_size);
+	else
 		error("Error creating new file");
-	
-	bzero(buffer, 256);
-	n =	recvfrom(sockfd, buffer, file_size, 0, (struct sockaddr *) &serv_addr, &serv_len); 
-	if(n > 0)
-		output.write(buffer, file_size);		
-
-	output.close();	
+	file.close();	
 }

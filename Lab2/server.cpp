@@ -18,17 +18,31 @@ void error(string msg)
 	exit(1);
 }
 
-void send_file(int sock, struct sockaddr_in &client, ifstream &input, long file_size)
+void sendFile(int sock, struct sockaddr_in &client, ifstream &input, long file_size)
 {
 	int n;
-	socklen_t clilen;
-	char packet[256];
-	bzero(packet, 256);
-	clilen = sizeof(client);
-	input.read(packet, file_size);
-	n = sendto(sock, packet, file_size, 0, (struct sockaddr *) &client, clilen); 
+	socklen_t clilen = sizeof(client);
+	char packet[1024];
+	long count = 1024;
+	
+	while(count < file_size){
+		bzero(packet, 1024);
+		input.read(packet, 1024);
+		n = sendto(sock, packet, 1024, 0, (struct sockaddr *) &client, clilen); 
+		if(n < 0)
+			printf("Error sending file to client\n");
+		count += 1024;
+	}
+
+	if(file_size > 1024)
+		count = 1024 - count % file_size;
+	else
+		count = file_size;
+	bzero(packet, 1024);
+	input.read(packet, count);
+	n = sendto(sock, packet, count, 0, (struct sockaddr *) &client, clilen);
 	if(n < 0)
-		printf("Error sending the file\n");
+		printf("Error sending file to client\n");
 }
 
 void dostuff(int sock, struct sockaddr_in &client, char *path)
@@ -46,11 +60,13 @@ void dostuff(int sock, struct sockaddr_in &client, char *path)
 	ss << file.tellg();
 	file.clear();
     file.seekg(0, ifstream::beg);
-	
+
+	//Send response message to client and start sending file	
 	if(file.is_open()){
 		msg = ss.str();
 		n = sendto(sock, msg.c_str(), msg.length(), 0, (struct sockaddr *) &client, clilen);
-		send_file(sock, client, file, size);
+		printf("Sending file to client...\n");
+		sendFile(sock, client, file, size);
 	}else{
 		msg = "File not found";
 		n = sendto(sock, msg.c_str(), msg.length(), 0, (struct sockaddr *) &client, clilen);
@@ -91,6 +107,7 @@ int main(int argc, char *argv[])
 		char buffer[256];
 		bzero(buffer, 256);			
 		int n = recvfrom(sockfd, buffer, 255, 0, (struct sockaddr *) &cli_addr, &clilen);
+		printf("Client requesting the file: %s\n", buffer);
 		if(n > 0){
 			dostuff(sockfd, cli_addr, buffer);
 		}	
