@@ -19,10 +19,6 @@ void error(string msg)
 	exit(1);
 }
 
-/*
-	Set packet Header. Header will include source port(32 bits), dest port(32 bits),
-    seq number(32 bits), checksum(16 bits), and window size(16 bits).
-*/
 void setPacketHeader(FilePacket *packet, unsigned long packet_num, struct sockaddr_in &client)
 {
 	packet->source_port = 10000;
@@ -36,34 +32,38 @@ void sendFile(int sock, struct sockaddr_in &client, ifstream &input, unsigned lo
 {
 	int n;
 	socklen_t clilen = sizeof(client);
-	char packet[PACKET_SIZE];
-	long count = PACKET_SIZE;
-	char ack_packet[256];	
+	FilePacket packet;
+	AckPacket ack_packet;
+	long count = PAYLOAD_SIZE;
+	unsigned long packet_num = 1;
 
 	while(count < file_size){
-		bzero(packet, PACKET_SIZE);
-		bzero(ack_packet, 256);
-		input.read(packet, PACKET_SIZE);
-		n = sendto(sock, packet, PACKET_SIZE, 0, (struct sockaddr *) &client, clilen); 
+		bzero(&packet, PACKET_SIZE);
+		setPacketHeader(&packet, packet_num, client); 
+		bzero(&ack_packet, ACK_SIZE);
+		input.read(packet.payload, PAYLOAD_SIZE);
+		n = sendto(sock, (char *)&packet, PACKET_SIZE, 0, (struct sockaddr *) &client, clilen); 
 		if(n < 0)
 			printf("Error sending file to client\n");
-		n = recvfrom(sock, ack_packet, 256, 0, (struct sockaddr *) &client, &clilen);	
-		printf("Client acknowledged recieving packet\n");
-		count += PACKET_SIZE;
+		n = recvfrom(sock, (char *)&ack_packet, ACK_SIZE, 0, (struct sockaddr *) &client, &clilen);	
+		printf("Client acknowledged recieving packet %lu\n", ack_packet.ack_num);
+		count += PAYLOAD_SIZE;
+		packet_num++;
 	}
 
-	if(file_size > PACKET_SIZE)
-		count = PACKET_SIZE - count % file_size;
+	if(file_size > PAYLOAD_SIZE)
+		count = PAYLOAD_SIZE - count % file_size;
 	else
 		count = file_size;
-	bzero(packet, PACKET_SIZE);
-	bzero(ack_packet, 256);
-	input.read(packet, count);
-	n = sendto(sock, packet, count, 0, (struct sockaddr *) &client, clilen);
+	bzero(&packet, PACKET_SIZE);
+	setPacketHeader(&packet, packet_num, client);
+	bzero(&ack_packet, ACK_SIZE);
+	input.read(packet.payload, count);
+	n = sendto(sock, (char *)&packet, PACKET_SIZE, 0, (struct sockaddr *) &client, clilen);
 	if(n < 0)
 		printf("Error sending file to client\n");
-	n = recvfrom(sock, ack_packet, 256, 0, (struct sockaddr *) &client, &clilen);
-	printf("Client acknowledged recieving packet\n");
+	n = recvfrom(sock, (char *)&ack_packet, ACK_SIZE, 0, (struct sockaddr *) &client, &clilen);
+	printf("Client acknowledged recieving packet %lu\n", ack_packet.ack_num);
 }
 
 void dostuff(int sock, struct sockaddr_in &client, char *path)
@@ -98,7 +98,6 @@ void dostuff(int sock, struct sockaddr_in &client, char *path)
 
 int main(int argc, char *argv[])
 {
-	cout << sizeof(long) << endl;
 	int sockfd, portno;
 	socklen_t clilen;
 	struct sockaddr_in serv_addr, cli_addr;

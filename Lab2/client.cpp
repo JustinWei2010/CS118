@@ -18,46 +18,51 @@ void error(string msg)
 	exit(1);	
 }
 
-void setPacketHeader()
+void setAckHeader(AckPacket *packet, unsigned long packet_num, struct sockaddr_in &server)
 {
-	
+	packet->source_port = 10000;
+	packet->dest_port = 10000;
+	packet->ack_num = packet_num;
+	packet->checksum = 0; 
 }
 
 void getFile(int sock, struct sockaddr_in &server, ofstream &output, unsigned long file_size)
 {
 	int n;
 	socklen_t servlen = sizeof(server);
-	char packet[PACKET_SIZE];
-	long count = PACKET_SIZE;
-	char ack_packet[256];
+	FilePacket packet;
+	AckPacket ack_packet;
+	long count = PAYLOAD_SIZE;
 	while(count < file_size){
-		bzero(packet, PACKET_SIZE);
-		bzero(ack_packet, 256);
-		n = recvfrom(sock, packet, PACKET_SIZE, 0, (struct sockaddr *) &server, &servlen);
+		bzero(&packet, PACKET_SIZE);
+		bzero(&ack_packet, ACK_SIZE);
+		n = recvfrom(sock, (char *) &packet, PACKET_SIZE, 0, (struct sockaddr *) &server, &servlen);
 		if(n < 0){
 			printf("Error recieving file from server\n");
 		}else{
-			n = sendto(sock, ack_packet, 256, 0, (struct sockaddr *) &server, servlen);
-			printf("Sent acknowledgement of packet to server\n");
-			output.write(packet, PACKET_SIZE);
+			setAckHeader(&ack_packet, packet.seq_num, server);
+			n = sendto(sock, (char *) &ack_packet, ACK_SIZE, 0, (struct sockaddr *) &server, servlen);
+			printf("Sent acknowledgement of packet %lu to server\n", packet.seq_num);
+			output.write(packet.payload, PAYLOAD_SIZE);
 		}
-		count += PACKET_SIZE;
+		count += PAYLOAD_SIZE;
 	}
 
 	//Add in extra bits of file
-	if(file_size > PACKET_SIZE)
-		count = PACKET_SIZE - count % file_size;
+	if(file_size > PAYLOAD_SIZE)
+		count = PAYLOAD_SIZE - count % file_size;
 	else
 		count = file_size;
-	bzero(packet, PACKET_SIZE);
-	bzero(ack_packet, 256);
-	n = recvfrom(sock, packet, count, 0, (struct sockaddr *) &server, &servlen);
+	bzero(&packet, PACKET_SIZE);
+	bzero(&ack_packet, ACK_SIZE);
+	n = recvfrom(sock, (char *) &packet, PACKET_SIZE, 0, (struct sockaddr *) &server, &servlen);
 	if(n < 0){
 		printf("Error recieving file from server\n");
 	}else{
-		n = sendto(sock, ack_packet, 256, 0, (struct sockaddr *) &server, servlen);
-		printf("Sent acknowledgement of packet to server\n");
-		output.write(packet, count);
+		setAckHeader(&ack_packet, packet.seq_num, server);
+		n = sendto(sock, (char *) &ack_packet, ACK_SIZE, 0, (struct sockaddr *) &server, servlen);
+		printf("Sent acknowledgement of packet %lu to server\n", packet.seq_num);
+		output.write(packet.payload, count);
 	}
 }
 
