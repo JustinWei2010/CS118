@@ -10,10 +10,8 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include "packet.h"
 using namespace std;
-
-const int PACKET_SIZE = 8192;
-const int PAYLOAD_SIZE = 0;
 
 void error(string msg)
 {
@@ -21,7 +19,20 @@ void error(string msg)
 	exit(1);
 }
 
-void sendFile(int sock, struct sockaddr_in &client, ifstream &input, long file_size)
+/*
+	Set packet Header. Header will include source port(32 bits), dest port(32 bits),
+    seq number(32 bits), checksum(16 bits), and window size(16 bits).
+*/
+void setPacketHeader(FilePacket *packet, unsigned long packet_num, struct sockaddr_in &client)
+{
+	packet->source_port = 10000;
+	packet->dest_port = 10000;
+	packet->seq_num = packet_num;
+	packet->checksum = 0;
+	packet->window_size = 0;
+}
+
+void sendFile(int sock, struct sockaddr_in &client, ifstream &input, unsigned long file_size)
 {
 	int n;
 	socklen_t clilen = sizeof(client);
@@ -63,10 +74,16 @@ void dostuff(int sock, struct sockaddr_in &client, char *path)
 	string msg;
 	file.open(path);
 
+	FilePacket packet;
+	bzero(&packet, PACKET_SIZE);
+	setPacketHeader(&packet, 1, client);
+	sendto(sock, (char*)&packet, PACKET_SIZE, 0, (struct sockaddr *) &client, clilen);
+	cout << "sent" << endl;
+
 	//Find out file size and reset file position
 	file.seekg(0, ifstream:: end);
 	stringstream ss;
-	long size = file.tellg();
+	unsigned long size = file.tellg();
 	ss << file.tellg();
 	file.clear();
     file.seekg(0, ifstream::beg);

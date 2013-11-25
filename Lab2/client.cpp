@@ -9,10 +9,8 @@
 #include <string>
 #include <fstream>
 #include <iostream>
+#include "packet.h"
 using namespace std;
-
-const int PACKET_SIZE = 8192;
-const int PAYLOAD_SIZE = 0;
 
 void error(string msg)
 {
@@ -20,7 +18,12 @@ void error(string msg)
 	exit(1);	
 }
 
-void getFile(int sock, struct sockaddr_in &server, ofstream &output, long file_size)
+void setPacketHeader()
+{
+	
+}
+
+void getFile(int sock, struct sockaddr_in &server, ofstream &output, unsigned long file_size)
 {
 	int n;
 	socklen_t servlen = sizeof(server);
@@ -105,8 +108,8 @@ int main(int argc, char *argv[])
 	}
 
 	//Get file from server given the size of the file
-	long file_size = atol(buffer);
-	printf("Retrieving file(%ldbytes)...\n", file_size);
+	unsigned long file_size = strtoul(buffer, NULL, 0);
+	printf("Retrieving file(%lubytes)...\n", file_size);
 	
 	file_name = "/home/cs118/client/" + file_name.substr(file_name.find_last_of("/")+1);
 	ofstream file;
