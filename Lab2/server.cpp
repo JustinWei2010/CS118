@@ -74,12 +74,6 @@ void dostuff(int sock, struct sockaddr_in &client, char *path)
 	string msg;
 	file.open(path);
 
-	FilePacket packet;
-	bzero(&packet, PACKET_SIZE);
-	setPacketHeader(&packet, 1, client);
-	sendto(sock, (char*)&packet, PACKET_SIZE, 0, (struct sockaddr *) &client, clilen);
-	cout << "sent" << endl;
-
 	//Find out file size and reset file position
 	file.seekg(0, ifstream:: end);
 	stringstream ss;
@@ -104,6 +98,7 @@ void dostuff(int sock, struct sockaddr_in &client, char *path)
 
 int main(int argc, char *argv[])
 {
+	cout << sizeof(long) << endl;
 	int sockfd, portno;
 	socklen_t clilen;
 	struct sockaddr_in serv_addr, cli_addr;

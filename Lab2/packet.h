@@ -1,7 +1,7 @@
-const int PACKET_SIZE = 8192;
-const int HEADER_SIZE = 96;
+const int PACKET_SIZE = 1024;
+const int HEADER_SIZE = 16;
 const int PAYLOAD_SIZE = PACKET_SIZE - HEADER_SIZE;
-const int ACK_SIZE = 80;
+const int ACK_SIZE = 14;
 
 struct FilePacket{
 	unsigned long source_port;
