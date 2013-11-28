@@ -2,6 +2,7 @@ const int PACKET_SIZE = 1024;
 const int HEADER_SIZE = 16;
 const int PAYLOAD_SIZE = PACKET_SIZE - HEADER_SIZE;
 const int ACK_SIZE = 14;
+const int TIMEOUT = 3000;
 
 struct FilePacket{
 	unsigned long source_port;
