@@ -151,7 +151,7 @@ int main(int argc, char *argv[])
 	float p_loss, p_cor;
 	socklen_t clilen;
 	struct sockaddr_in serv_addr, cli_addr;
-	srand(time(NULL));	
+	srand(time(NULL));
 
 	if(argc < 4){
 		fprintf(stderr, "ERROR need port, window size, loss prob, and corr prob in that order\n");

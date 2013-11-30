@@ -34,7 +34,6 @@ void getFile(int sock, int portno, struct sockaddr_in &server, ofstream &output,
 	AckPacket ack_packet;
 	long count = PAYLOAD_SIZE;
 	unsigned long last_recieved = 0;
-	srand(time(NULL));
 	while(count < file_size){
 		//Retrieve packet from server, keep waiting to account for packet loss
 		bzero(&packet, PACKET_SIZE);
@@ -148,6 +147,7 @@ int main(int argc, char *argv[])
 	struct sockaddr_in serv_addr, cli_addr;
 	struct hostent *server;
 	string file_name;
+	srand(time(NULL));
 
 	if(argc < 6){
 		fprintf(stderr, "ERROR need hostname, port number, filename, loss prob, and corr prob in that order\n");
