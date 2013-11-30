@@ -32,9 +32,18 @@ void getFile(int sock, int portno, struct sockaddr_in &server, ofstream &output,
 	socklen_t servlen = sizeof(server);
 	FilePacket packet;
 	AckPacket ack_packet;
-	long count = PAYLOAD_SIZE;
+	long count = 0;
 	unsigned long last_recieved = 0;
 	while(count < file_size){
+		//Calculate the payload_size for current packet, important for the last packet
+		long payload_size = PAYLOAD_SIZE;
+		if(count + PAYLOAD_SIZE > file_size){
+			if(file_size > PAYLOAD_SIZE)
+				payload_size = PAYLOAD_SIZE - (count + PAYLOAD_SIZE) % file_size;
+			else
+				payload_size = file_size;
+		}
+
 		//Retrieve packet from server, keep waiting to account for packet loss
 		bzero(&packet, PACKET_SIZE);
 		bool recieved_packet = false;
@@ -70,56 +79,10 @@ void getFile(int sock, int portno, struct sockaddr_in &server, ofstream &output,
 			continue;
 		}
 
-		output.write(packet.payload, PAYLOAD_SIZE);
+		output.write(packet.payload, payload_size);
 		count += PAYLOAD_SIZE;
 	}
 
-	bool corruption = true;	
-	//Calculate the number of bits left in file
-	if(file_size > PAYLOAD_SIZE)
-		count = PAYLOAD_SIZE - count % file_size;
-	else
-		count = file_size;
-
-	//Add in extra bits of the file
-	while(corruption){
-		bool recieved_packet = false;
-		while(!recieved_packet){
-			n = recvfrom(sock, (char *) &packet, PACKET_SIZE, 0, (struct sockaddr *) &server, &servlen);
-			if(n < 0){
-				continue;
-			}
-			recieved_packet = true;
-		}
-	
-		//Emulate corruption
-		if(random() % 101 < p_cor){	
-			printf("Packet %lu is corrupted, discarding packet...\n", packet.seq_num);				
-			continue;	
-		}
-	
-		last_recieved++;	
-
-		//Emulate packet loss, by not sending ack if random is less than p_loss
-		if(random() % 101 >= p_loss * 100){
-			bzero(&ack_packet, ACK_SIZE);
-			setAckHeader(&ack_packet, packet.seq_num, server, portno);
-			n = sendto(sock, (char *) &ack_packet, ACK_SIZE, 0, (struct sockaddr *) &server, servlen);
-			printf("Sent acknowledgement of packet %lu to server\n", packet.seq_num);
-		}else{
-			printf("Ack %lu will be lost\n", packet.seq_num);
-		}
-
-		//Check for duplicate packet		
-		if(packet.seq_num != last_recieved){
-			last_recieved = packet.seq_num;
-			continue;
-		}
-
-		output.write(packet.payload, count);
-		corruption = false;
-	}
-	
 	//If last ack packet is lost then keep resending ack till server stops sending packets
 	bool finished = false;
 	while(!finished){

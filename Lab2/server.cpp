@@ -35,18 +35,27 @@ void sendFile(int sock, int portno, struct sockaddr_in &client, ifstream &input,
 	socklen_t clilen = sizeof(client);
 	FilePacket packet;
 	AckPacket ack_packet;
-	long count = PAYLOAD_SIZE;
+	long count = 0;
 	unsigned long packet_num = 1;
 	
 	while(count < file_size){
+		//Calculate the payload_size for current packet, important for the last packet
+		long payload_size = PAYLOAD_SIZE;
+		if(count + PAYLOAD_SIZE > file_size){
+			if(file_size > PAYLOAD_SIZE)
+				payload_size = PAYLOAD_SIZE - (count + PAYLOAD_SIZE) % file_size;
+			else
+				payload_size = file_size;
+		}
+
 		//Read input
 		bzero(&packet, PACKET_SIZE);
 		setPacketHeader(&packet, packet_num, client, portno, cwnd); 	
-		input.read(packet.payload, PAYLOAD_SIZE);
+		input.read(packet.payload, payload_size);
 
-		bool corruption = true;
+		bool retransmit = true;
 		//Wait for ack packet, retransmit if timeout
-		while(corruption){
+		while(retransmit){
 			//Emulate packet loss by not transmitting packet if random is less than p_loss 
 			if(random() % 101 >= p_loss * 100){		
 				n = sendto(sock, (char *)&packet, PACKET_SIZE, 0, (struct sockaddr *) &client, clilen); 
@@ -67,50 +76,12 @@ void sendFile(int sock, int portno, struct sockaddr_in &client, ifstream &input,
 				printf("Resending packet %lu...\n", packet_num);
 				continue;
 			}
-			corruption = false;
+			retransmit = false;
 		}
 
 		printf("Client acknowledged recieving packet %lu\n", ack_packet.ack_num);
 		count += PAYLOAD_SIZE;
 		packet_num++;
-	}
-
-	bool corruption = true;
-	//Calculate remaining file that hasn't been sent
-	if(file_size > PAYLOAD_SIZE)
-		count = PAYLOAD_SIZE - count % file_size;
-	else
-		count = file_size;
-
-	//Zero out packet and read from input
-	bzero(&packet, PACKET_SIZE);
-	setPacketHeader(&packet, packet_num, client, portno, cwnd);
-	input.read(packet.payload, count);
-	
-	while(corruption){
-		//Emulate packet loss by not transmitting packet if random is less than p_loss 
-		if(random() % 101 >= p_loss * 100){		
-			n = sendto(sock, (char *)&packet, PACKET_SIZE, 0, (struct sockaddr *) &client, clilen); 
-		}else{
-			printf("Packet %lu will be lost\n", packet_num);
-		}
-	
-		//Wait for ack or retransmit	
-		bzero(&ack_packet, ACK_SIZE);
-		n = recvfrom(sock, (char *)&ack_packet, ACK_SIZE, 0, (struct sockaddr *) &client, &clilen);
-		if(n < 0){
-			continue;
-		}
-	
-		//Emulate packet corruption
-		if(random() % 101 < p_cor * 100){
-			printf("Ack packet %lu is corrupted\n", ack_packet.ack_num);
-			printf("Resending packet %lu...\n", packet_num);
-			continue;
-		}
-	
-		printf("Client acknowledged recieving packet %lu\n", ack_packet.ack_num);
-		corruption = false;
 	}
 }
 
