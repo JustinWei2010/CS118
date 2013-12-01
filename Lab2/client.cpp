@@ -19,11 +19,12 @@ void error(string msg)
 	exit(1);	
 }
 
-void setAckHeader(AckPacket *packet, unsigned long packet_num, struct sockaddr_in &server, int portno)
+void setAckHeader(AckPacket *packet, unsigned long packet_num, unsigned long offset, struct sockaddr_in &server, int portno)
 {
 	packet->source_port = portno;
 	packet->dest_port = ntohs(server.sin_port);
 	packet->ack_num = packet_num;
+	packet->file_offset = offset;
 }
 
 void getFile(int sock, int portno, struct sockaddr_in &server, ofstream &output, unsigned long file_size, float p_loss, float p_cor)
@@ -32,18 +33,9 @@ void getFile(int sock, int portno, struct sockaddr_in &server, ofstream &output,
 	socklen_t servlen = sizeof(server);
 	FilePacket packet;
 	AckPacket ack_packet;
-	long count = 0;
-	unsigned long last_recieved = 0;
-	while(count < file_size){
-		//Calculate the payload_size for current packet, important for the last packet
-		long payload_size = PAYLOAD_SIZE;
-		if(count + PAYLOAD_SIZE > file_size){
-			if(file_size > PAYLOAD_SIZE)
-				payload_size = PAYLOAD_SIZE - (count + PAYLOAD_SIZE) % file_size;
-			else
-				payload_size = file_size;
-		}
-
+	unsigned long file_offset = 0;
+	unsigned long expected_packet = 1;
+	while(file_offset < file_size){
 		//Retrieve packet from server, keep waiting to account for packet loss
 		bzero(&packet, PACKET_SIZE);
 		bool recieved_packet = false;
@@ -55,45 +47,56 @@ void getFile(int sock, int portno, struct sockaddr_in &server, ofstream &output,
 			recieved_packet = true;
 		}
 
-		//Emulate corruption, discard packet then wait for retransmit
+		//Simulate packet corruption, discard packet then wait for retransmit
 		if(random() % 101 < p_cor * 100){
-			printf("Packet %lu is corrupted, discarding packet...\n", packet.seq_num);					
+			printf("Simulate packet %lu corruption, discarding...\n", packet.seq_num);					
 			continue;	
 		}
+	
+		if(packet.seq_num == expected_packet)	
+			printf("Recieved packet %lu\n", packet.seq_num);
+		else
+			printf("Duplicate or out of order packet, discarding...\n");
 
-		last_recieved++;
-
-		//Emulate packet loss, by not sending ack if random is less than p_loss
-		if(random() % 101 >= p_loss * 100){
-			bzero(&ack_packet, ACK_SIZE);
-			setAckHeader(&ack_packet, packet.seq_num, server, portno);
-			n = sendto(sock, (char *) &ack_packet, ACK_SIZE, 0, (struct sockaddr *) &server, servlen);
-			printf("Sent acknowledgement of packet %lu to server\n", packet.seq_num);
+		//Send packet acknowledgement
+		bzero(&ack_packet, ACK_SIZE);
+		if(packet.seq_num == expected_packet){
+			setAckHeader(&ack_packet, expected_packet+1, file_offset + packet.payload_size, server, portno);
 		}else{
-			printf("Ack %lu will be lost\n", packet.seq_num);
+			setAckHeader(&ack_packet, expected_packet, file_offset, server, portno);
+		}
+
+		//Simulate ack loss, by not sending ack
+		if(random() % 101 >= p_loss * 100){
+			n = sendto(sock, (char *) &ack_packet, ACK_SIZE, 0, (struct sockaddr *) &server, servlen);
+			printf("Sent ack %lu\n", ack_packet.ack_num);
+		}else{
+			printf("Simulate ack %lu loss\n", ack_packet.ack_num);
 		}
 
 		//If duplicate packet dont write to output
-		if(packet.seq_num != last_recieved){
-			last_recieved = packet.seq_num; 
+		if(packet.seq_num != expected_packet){
 			continue;
 		}
-
-		output.write(packet.payload, payload_size);
-		count += PAYLOAD_SIZE;
+		
+		output.write(packet.payload, packet.payload_size);
+		expected_packet++;
+		file_offset += packet.payload_size;
 	}
 
+	printf("Finished downloading file!\n");
 	//If last ack packet is lost then keep resending ack till server stops sending packets
 	bool finished = false;
 	while(!finished){
 		n = recvfrom(sock, (char *) &packet, PACKET_SIZE, 0, (struct sockaddr *) &server, &servlen);
 		if(n >= 0){
+			printf("Duplicate or out of order packet, discarding...\n");
 			//Emulate packet loss
 			if(random() % 100 >= p_loss * 100){
 				bzero(&ack_packet, ACK_SIZE);
-				setAckHeader(&ack_packet, packet.seq_num, server, portno);
+				setAckHeader(&ack_packet, expected_packet, file_size, server, portno);
 				n = sendto(sock, (char *) &ack_packet, ACK_SIZE, 0, (struct sockaddr *) &server, servlen);
-				printf("Sent acknowledgement of packet %lu to server\n", packet.seq_num);
+				printf("Sent ack %lu\n", ack_packet.ack_num);
 			}
 			continue;
 		}
@@ -140,20 +143,19 @@ int main(int argc, char *argv[])
 
 	//Set timeout on all requests
 	struct timeval tv;
-	tv.tv_sec = 2;
-	tv.tv_usec = 0;
+	tv.tv_sec = TIMEOUT * 3;
+	tv.tv_usec = 0; //Error without init
 	setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(struct timeval));
 
-	//Send request to server and retrieve response
+	//Send file request to server
 	n = sendto(sockfd, file_name.c_str(), file_name.length(), 0, (struct sockaddr *) &serv_addr, serv_len);
-	if(n < 0)
-		error("Error sending file name");	
 
+	//Recieve reseponse from server, includes file size or error message	
 	char buffer[256];
 	bzero(buffer, 256);
-
 	n = recvfrom(sockfd, buffer, 255, 0, (struct sockaddr *) &serv_addr, &serv_len);
 
+	//If file is not found on server exit
 	string msg(buffer);
 	if(msg == "File not found"){
 		printf("File not found on server\n");

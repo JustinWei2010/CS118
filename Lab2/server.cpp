@@ -21,68 +21,84 @@ void error(string msg)
 	exit(1);
 }
 
-void setPacketHeader(FilePacket *packet, unsigned long packet_num, struct sockaddr_in &client, int portno, int cwnd)
+void setPacketHeader(FilePacket *packet, unsigned long packet_num, int size, struct sockaddr_in &client, int portno)
 {
 	packet->source_port = portno;
 	packet->dest_port = ntohs(client.sin_port);
 	packet->seq_num = packet_num;
-	packet->window_size = cwnd;
+	packet->payload_size = size;
 }
 
 void sendFile(int sock, int portno, struct sockaddr_in &client, ifstream &input, unsigned long file_size, int cwnd, float p_loss, float p_cor)
 {
-	int n;
+	int n = -1;
 	socklen_t clilen = sizeof(client);
 	FilePacket packet;
 	AckPacket ack_packet;
-	long count = 0;
 	unsigned long packet_num = 1;
+	unsigned long last_acked = 1;
+	unsigned long file_offset = 0;
 	
-	while(count < file_size){
-		//Calculate the payload_size for current packet, important for the last packet
-		long payload_size = PAYLOAD_SIZE;
-		if(count + PAYLOAD_SIZE > file_size){
-			if(file_size > PAYLOAD_SIZE)
-				payload_size = PAYLOAD_SIZE - (count + PAYLOAD_SIZE) % file_size;
-			else
-				payload_size = file_size;
-		}
+	while(file_offset < file_size){
+		int window_offset = 0;
+		int packets_sent = 0;
+		unsigned long seek_offset = file_offset;
 
-		//Read input
-		bzero(&packet, PACKET_SIZE);
-		setPacketHeader(&packet, packet_num, client, portno, cwnd); 	
-		input.read(packet.payload, payload_size);
-
-		bool retransmit = true;
-		//Wait for ack packet, retransmit if timeout
-		while(retransmit){
-			//Emulate packet loss by not transmitting packet if random is less than p_loss 
-			if(random() % 101 >= p_loss * 100){		
-				n = sendto(sock, (char *)&packet, PACKET_SIZE, 0, (struct sockaddr *) &client, clilen); 
-			}else{
-				printf("Packet %lu will be lost\n", packet_num);
+		while(window_offset < cwnd && seek_offset < file_size){
+			input.seekg(0, ifstream::beg);
+			
+			//Set payload size, care for excess bytes when window_offset is > cwnd	
+			unsigned long payload_size = PAYLOAD_SIZE;
+			if(window_offset + PACKET_SIZE > cwnd){
+				payload_size = PACKET_SIZE - (window_offset + PACKET_SIZE) % cwnd;
+				if(payload_size <= HEADER_SIZE)
+					break;
+				else
+					payload_size -= HEADER_SIZE;		
+			}
+			//Check and account for end of file
+			if(seek_offset + payload_size > file_size){
+				payload_size = file_size - seek_offset; 
 			}
 
+			//Read input of file, reset seekg to current file offset	
+			bzero(&packet, PACKET_SIZE);
+			setPacketHeader(&packet, packet_num, payload_size, client, portno);
+			input.seekg(seek_offset);
+			input.read(packet.payload, payload_size);
+
+			//Simulate packet loss by not sending packet		
+			if(random() % 101 < p_loss * 100){
+				printf("Simulating packet %lu loss\n", packet.seq_num);
+			}else{
+				n = sendto(sock, (char *)&packet, PACKET_SIZE, 0, (struct sockaddr *) &client, clilen); 
+				printf("Sent packet %lu\n", packet.seq_num);	
+			}
+
+			packet_num++;
+			packets_sent++;
+			window_offset += PACKET_SIZE;
+			seek_offset += payload_size;
+		}
+	
+		//Wait for same number of acks as packets sent	
+		for(int i = 0; i < packets_sent; i++){
 			bzero(&ack_packet, ACK_SIZE);
 			n = recvfrom(sock, (char *)&ack_packet, ACK_SIZE, 0, (struct sockaddr *) &client, &clilen);	
-			if(n < 0){
-				printf("Timeout, resending packet %lu...\n", packet_num);
-				continue;
+			//Update values if recieved ack
+			if(n >= 0){
+				//Simulate ack corruption and discard ack
+				if(random() % 101 < p_cor * 100){
+					printf("Simulating ack %lu corruption, discarding...\n", ack_packet.ack_num);
+				}else{
+					last_acked = ack_packet.ack_num;
+					file_offset = ack_packet.file_offset;	
+					printf("Recieved ack %lu\n", ack_packet.ack_num);
+				}
 			}
-			
-			//Emulate ack corruption
-			if(random() % 101 < p_cor * 100){
-				printf("Ack packet %lu is corrupted\n", ack_packet.ack_num);
-				printf("Resending packet %lu...\n", packet_num);
-				continue;
-			}
-			retransmit = false;
 		}
-
-		printf("Client acknowledged recieving packet %lu\n", ack_packet.ack_num);
-		count += PAYLOAD_SIZE;
-		packet_num++;
-	}
+		packet_num = last_acked;
+	}	
 }
 
 void parseRequest(int sock, int portno, struct sockaddr_in &client, char *path, int cwnd, float p_loss, float p_cor)
@@ -104,6 +120,7 @@ void parseRequest(int sock, int portno, struct sockaddr_in &client, char *path, 
 	//Send response message to client and start sending file	
 	if(file.is_open()){
 		msg = ss.str();
+		
 		n = sendto(sock, msg.c_str(), msg.length(), 0, (struct sockaddr *) &client, clilen);
 		printf("Sending file to client...\n");
 		sendFile(sock, portno, client, file, size, cwnd, p_loss, p_cor);
@@ -154,15 +171,15 @@ int main(int argc, char *argv[])
 	
 	//Set timeout on all requests
 	struct timeval tv;
-	tv.tv_sec = 2;
-	tv.tv_usec = 0;
+	tv.tv_sec = TIMEOUT;
+	tv.tv_usec = 0; //Error without init
 	setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(struct timeval));
 
 	while(1){
 		int n;
 		char buffer[256];
 		bzero(buffer, 256);
-				
+		
 		n = recvfrom(sockfd, buffer, 255, 0, (struct sockaddr *) &cli_addr, &clilen);
 
 		//Parse client request and send file	
