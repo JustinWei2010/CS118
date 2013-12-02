@@ -35,8 +35,8 @@ void sendFile(int sock, int portno, struct sockaddr_in &client, ifstream &input,
 	socklen_t clilen = sizeof(client);
 	FilePacket packet;
 	AckPacket ack_packet;
-	unsigned long packet_num = 1;
-	unsigned long last_acked = 1;
+	unsigned long packet_num = 0;
+	unsigned long last_acked = 0;
 	unsigned long file_offset = 0;
 	
 	while(file_offset < file_size){
@@ -67,13 +67,9 @@ void sendFile(int sock, int portno, struct sockaddr_in &client, ifstream &input,
 			input.seekg(seek_offset);
 			input.read(packet.payload, payload_size);
 
-			//Simulate packet loss by not sending packet		
-			if(random() % 101 < p_loss * 100){
-				printf("Simulating packet %lu loss\n", packet.seq_num);
-			}else{
-				n = sendto(sock, (char *)&packet, PACKET_SIZE, 0, (struct sockaddr *) &client, clilen); 
-				printf("Sent packet %lu\n", packet.seq_num);	
-			}
+			//Send packet to client		
+			n = sendto(sock, (char *)&packet, PACKET_SIZE, 0, (struct sockaddr *) &client, clilen); 
+			printf("Sent packet %lu\n", packet.seq_num);	
 
 			packet_num++;
 			packets_sent++;
@@ -85,16 +81,21 @@ void sendFile(int sock, int portno, struct sockaddr_in &client, ifstream &input,
 		for(int i = 0; i < packets_sent; i++){
 			bzero(&ack_packet, ACK_SIZE);
 			n = recvfrom(sock, (char *)&ack_packet, ACK_SIZE, 0, (struct sockaddr *) &client, &clilen);	
-			//Update values if recieved ack
+			//Update values if recieved ack, if timeout then stop waiting for ack
 			if(n >= 0){
-				//Simulate ack corruption and discard ack
-				if(random() % 101 < p_cor * 100){
-					printf("Simulating ack %lu corruption, discarding...\n", ack_packet.ack_num);
+				//Simulate ack corruption and ack loss by discarding ack
+				if(random() % 100 < p_loss * 100){
+					printf("Ack %lu loss\n", ack_packet.ack_num);
+				}else if(random() % 100 < p_cor * 100){
+					printf("Ack %lu corruption, discarding...\n", ack_packet.ack_num);
 				}else{
 					last_acked = ack_packet.ack_num;
 					file_offset = ack_packet.file_offset;	
 					printf("Recieved ack %lu\n", ack_packet.ack_num);
 				}
+			//Actual packet loss, just break out of loop to avoid waiting for multiple TIMEOUT 
+			}else{
+				break;
 			}
 		}
 		packet_num = last_acked;

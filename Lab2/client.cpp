@@ -34,25 +34,28 @@ void getFile(int sock, int portno, struct sockaddr_in &server, ofstream &output,
 	FilePacket packet;
 	AckPacket ack_packet;
 	unsigned long file_offset = 0;
-	unsigned long expected_packet = 1;
+	unsigned long expected_packet = 0;
 	while(file_offset < file_size){
-		//Retrieve packet from server, keep waiting to account for packet loss
+		//Retrieve packet from server, keep waiting to account for actual packet loss
 		bzero(&packet, PACKET_SIZE);
-		bool recieved_packet = false;
-		while(!recieved_packet){
-			n = recvfrom(sock, (char *) &packet, PACKET_SIZE, 0, (struct sockaddr *) &server, &servlen);
-			if(n < 0){
-				continue;
-			}
-			recieved_packet = true;
-		}
-
-		//Simulate packet corruption, discard packet then wait for retransmit
-		if(random() % 101 < p_cor * 100){
-			printf("Simulate packet %lu corruption, discarding...\n", packet.seq_num);					
-			continue;	
+		n = recvfrom(sock, (char *) &packet, PACKET_SIZE, 0, (struct sockaddr *) &server, &servlen);
+		if(n < 0){
+			continue;
 		}
 	
+		//Simulate packet loss	
+		if(random() % 100 < p_loss * 100){
+			printf("Packet %lu loss\n", packet.seq_num);
+			continue;
+		}
+		
+		//Simulate packet corruption, discard packet then wait for retransmit
+		if(random() % 100 < p_cor * 100){
+			printf("Packet %lu corruption, discarding...\n", packet.seq_num);					
+			continue;	
+		}
+
+		//Make sure the packet is expected	
 		if(packet.seq_num == expected_packet)	
 			printf("Recieved packet %lu\n", packet.seq_num);
 		else
@@ -65,20 +68,13 @@ void getFile(int sock, int portno, struct sockaddr_in &server, ofstream &output,
 		}else{
 			setAckHeader(&ack_packet, expected_packet, file_offset, server, portno);
 		}
-
-		//Simulate ack loss, by not sending ack
-		if(random() % 101 >= p_loss * 100){
-			n = sendto(sock, (char *) &ack_packet, ACK_SIZE, 0, (struct sockaddr *) &server, servlen);
-			printf("Sent ack %lu\n", ack_packet.ack_num);
-		}else{
-			printf("Simulate ack %lu loss\n", ack_packet.ack_num);
-		}
-
+		n = sendto(sock, (char *) &ack_packet, ACK_SIZE, 0, (struct sockaddr *) &server, servlen);
+		printf("Sent ack %lu\n", ack_packet.ack_num);
+		
 		//If duplicate packet dont write to output
 		if(packet.seq_num != expected_packet){
 			continue;
 		}
-		
 		output.write(packet.payload, packet.payload_size);
 		expected_packet++;
 		file_offset += packet.payload_size;
@@ -90,14 +86,16 @@ void getFile(int sock, int portno, struct sockaddr_in &server, ofstream &output,
 	while(!finished){
 		n = recvfrom(sock, (char *) &packet, PACKET_SIZE, 0, (struct sockaddr *) &server, &servlen);
 		if(n >= 0){
-			printf("Duplicate or out of order packet, discarding...\n");
-			//Emulate packet loss
-			if(random() % 100 >= p_loss * 100){
-				bzero(&ack_packet, ACK_SIZE);
-				setAckHeader(&ack_packet, expected_packet, file_size, server, portno);
-				n = sendto(sock, (char *) &ack_packet, ACK_SIZE, 0, (struct sockaddr *) &server, servlen);
-				printf("Sent ack %lu\n", ack_packet.ack_num);
+			//Simulating packet loss
+			if(random() % 100 < p_loss * 100){
+				printf("Packet %lu loss\n", packet.seq_num);
+				continue;
 			}
+			printf("Duplicate or out of order packet, discarding...\n");
+			bzero(&ack_packet, ACK_SIZE);
+			setAckHeader(&ack_packet, expected_packet, file_size, server, portno);
+			n = sendto(sock, (char *) &ack_packet, ACK_SIZE, 0, (struct sockaddr *) &server, servlen);
+			printf("Sent ack %lu\n", ack_packet.ack_num);
 			continue;
 		}
 		finished = true;
@@ -143,7 +141,7 @@ int main(int argc, char *argv[])
 
 	//Set timeout on all requests
 	struct timeval tv;
-	tv.tv_sec = TIMEOUT * 3;
+	tv.tv_sec = TIMEOUT * 2;
 	tv.tv_usec = 0; //Error without init
 	setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(struct timeval));
 
@@ -166,7 +164,7 @@ int main(int argc, char *argv[])
 	unsigned long file_size = strtoul(buffer, NULL, 0);
 	printf("Retrieving file(%lubytes)...\n", file_size);
 	
-	file_name = "/home/cs118/client/" + file_name.substr(file_name.find_last_of("/")+1);
+	file_name = file_name.substr(file_name.find_last_of("/")+1);
 	ofstream file;
 	file.open(file_name.c_str()); 
 	if(file.is_open())
